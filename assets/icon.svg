@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="1" stop-color="#fca5a5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- back photo -->
+  <g transform="rotate(-10 256 256)">
+    <rect x="118" y="132" width="250" height="210" rx="26" fill="#ffffff" opacity="0.35"/>
+  </g>
+  <!-- front photo -->
+  <g transform="rotate(6 256 276)">
+    <rect x="132" y="168" width="264" height="220" rx="28" fill="#ffffff"/>
+    <rect x="152" y="188" width="224" height="152" rx="16" fill="url(#sky)"/>
+    <circle cx="326" cy="226" r="20" fill="#ffffff"/>
+    <path d="M152 340 L222 262 L268 308 L300 278 L376 340 Z" fill="#4f46e5"/>
+    <path d="M152 340 L222 262 L246 288 L190 340 Z" fill="#6366f1"/>
+    <rect x="152" y="356" width="96" height="12" rx="6" fill="#c7d2fe"/>
+  </g>
+</svg>

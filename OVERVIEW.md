@@ -1,0 +1,9 @@
+Image gallery shows every image from the agents of a workspace in one grid, so you can browse screenshots and generated pictures without scrolling through timelines.
+
+It opens in the right-side Explorer panel beside Files, Changes, and Terminal. Open it from the Explorer **+** menu as **Image gallery**, from the Command Center with "Open workspace image gallery", or by typing `/gallery` in the composer.
+
+Tap a thumbnail to view it full screen. On desktop and web, the file name, counter, and zoom controls appear when the pointer nears the top edge, the path, agent, and time near the bottom edge, and the previous and next buttons near the left and right edges; the left and right arrow keys also switch images and Escape closes the viewer. On phones, tap the image to show or hide the controls. Small images can be enlarged to fit the screen, and large images can be shown at actual size and dragged around; Reset returns to the fitted view.
+
+The gallery scans the timelines of the workspace's agents on the daemon and collects images the agents read or wrote, image paths that appear in commands, outputs, and messages, uploaded image files, and Markdown images. Archived and background agents are skipped. Local files that no longer exist are skipped, and identical images are shown once, even when several agents used them. Remote `http` and `https` images load directly from their URLs. The gallery refreshes when the workspace status changes, and the refresh button rescans on demand.
+
+Local images are read on the daemon machine only from paths found in session timelines, up to 25 MB each, and are shown only in the Paseo app. The plugin sends nothing to agent providers or other services. Remote images are loaded by the app directly from their hosts. Images pasted directly into the composer are not recorded in the timeline, so they do not appear.

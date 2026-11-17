@@ -1,0 +1,10 @@
+{
+  "id": "paseo-image-gallery",
+  "name": "Image gallery",
+  "description": "Browse every image from a workspace's agent sessions in a side panel gallery",
+  "icon": "assets/icon.png",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.16.0"
+  }
+}
