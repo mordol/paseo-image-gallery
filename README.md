@@ -31,7 +31,7 @@ paseo plugin reload paseo-image-gallery
 
 ## How it works
 
-The daemon side reads each agent's timeline through the Paseo SDK, extracts image references, keeps files that exist on the daemon machine, and removes duplicates by content hash. The app requests image bytes only for paths returned by a scan. Images pasted directly into the composer are not recorded in the timeline, so they do not appear.
+The daemon side reads each agent's timeline through the Paseo SDK, extracts image references, keeps files that exist on the daemon machine, and removes duplicates by content hash, cached by file size and modification time. On macOS, grid thumbnails are resized with the built-in `sips` tool and cached in the system temp directory. The app requests image bytes only for paths returned by a scan. Images pasted directly into the composer are not recorded in the timeline, so they do not appear.
 
 ## License
 

@@ -1,10 +1,13 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
-import { extname, isAbsolute, resolve } from "node:path";
+import { mkdir, readFile, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
-import type { GalleryImage, listImagesRpc, readImageRpc } from "../shared/gallery";
+import type { GalleryImage, listImagesRpc, readImageRpc, readThumbnailRpc } from "../shared/gallery";
 
 const MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -24,8 +27,11 @@ const PATH_PATTERN = new RegExp(String.raw`(?:~|/)[^\s"'\`<>()\[\]{},;|*]*\.(?:$
 const MARKDOWN_IMAGE = /!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
 const URL_PATTERN = new RegExp(String.raw`https?://[^\s"'\`<>()\[\]]+?\.(?:${EXT})(?:\?[^\s"'\`<>()\[\]]*)?(?=[\s"'\`<>()\[\]]|$)`, "gi");
 
-/** Paths a scan returned; `gallery.read` serves only these. */
+/** Paths a scan returned; `gallery.read` and `gallery.thumbnail` serve only these. */
 const allowedPaths = new Set<string>();
+
+/** Content hashes keyed by path, reused while the file's size and modification time match. */
+const hashCache = new Map<string, { size: number; mtimeMs: number; hash: string }>();
 
 interface Candidate {
   raw: string;
@@ -83,7 +89,11 @@ async function fileHash(path: string): Promise<string | null> {
   try {
     const info = await stat(path);
     if (!info.isFile() || info.size > MAX_BYTES) return null;
-    return createHash("sha1").update(await readFile(path)).digest("hex");
+    const cached = hashCache.get(path);
+    if (cached && cached.size === info.size && cached.mtimeMs === info.mtimeMs) return cached.hash;
+    const hash = createHash("sha1").update(await readFile(path)).digest("hex");
+    hashCache.set(path, { size: info.size, mtimeMs: info.mtimeMs, hash });
+    return hash;
   } catch {
     return null;
   }
@@ -184,12 +194,51 @@ export async function listImages(
   return { images };
 }
 
-export async function readImage({ path }: RpcInput<typeof readImageRpc>) {
+function checkAllowed(path: string) {
   if (!allowedPaths.has(path)) {
     throw new Error("This path is not an image from a session. Refresh the gallery.");
   }
   const mimeType = MIME_TYPES[extname(path).toLowerCase()];
   if (!mimeType) throw new Error(`Unsupported image type: ${path}`);
+  return mimeType;
+}
+
+export async function readImage({ path }: RpcInput<typeof readImageRpc>) {
+  const mimeType = checkAllowed(path);
   const bytes = await readFile(path);
   return { mimeType, base64: bytes.toString("base64") };
+}
+
+const THUMBNAIL_SIZE = 320;
+const THUMBNAIL_DIR = join(tmpdir(), "paseo-image-gallery-thumbnails");
+const run = promisify(execFile);
+/** Formats macOS `sips` converts reliably. SVG and others are served at full size. */
+const RESIZABLE = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
+
+/**
+ * A copy at most THUMBNAIL_SIZE pixels on its longest side, made with the `sips` tool built
+ * into macOS and cached in the temp directory by content hash. Other platforms, formats `sips`
+ * cannot convert, and images already small enough get the original file.
+ */
+export async function readThumbnail({ path }: RpcInput<typeof readThumbnailRpc>) {
+  const mimeType = checkAllowed(path);
+  const hash = await fileHash(path);
+  const info = await stat(path);
+  const small = info.size <= 64 * 1024;
+  if (process.platform === "darwin" && hash && !small && RESIZABLE.has(extname(path).toLowerCase())) {
+    const out = join(THUMBNAIL_DIR, `${hash}-${THUMBNAIL_SIZE}.png`);
+    try {
+      return { mimeType: "image/png", base64: (await readFile(out)).toString("base64") };
+    } catch {
+      // Not cached yet.
+    }
+    try {
+      await mkdir(THUMBNAIL_DIR, { recursive: true });
+      await run("sips", ["-Z", String(THUMBNAIL_SIZE), "-s", "format", "png", path, "--out", out]);
+      return { mimeType: "image/png", base64: (await readFile(out)).toString("base64") };
+    } catch (error) {
+      console.error(`Thumbnail failed for ${path}:`, error);
+    }
+  }
+  return { mimeType, base64: (await readFile(path)).toString("base64") };
 }

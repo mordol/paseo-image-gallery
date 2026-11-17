@@ -27,3 +27,10 @@ export const readImageRpc = defineRpc({
   output: z.object({ mimeType: z.string(), base64: z.string() }),
 });
 
+
+/** A small copy for grid thumbnails; falls back to the original image when it cannot resize. */
+export const readThumbnailRpc = defineRpc({
+  name: "gallery.thumbnail",
+  input: z.object({ path: z.string() }),
+  output: z.object({ mimeType: z.string(), base64: z.string() }),
+});

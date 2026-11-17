@@ -1,12 +1,15 @@
 import { useRpc } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
-import { type GalleryImage, readImageRpc } from "../shared/gallery";
+import { type GalleryImage, readImageRpc, readThumbnailRpc } from "../shared/gallery";
 
-/** Resolves an image to a URI the Image component can show. Local files come from the daemon. */
-export function useImageUri(image: GalleryImage) {
-  const readImage = useRpc(readImageRpc);
+/**
+ * Resolves an image to a URI the Image component can show. Local files come from the daemon,
+ * as a small copy when `thumbnail` is set.
+ */
+export function useImageUri(image: GalleryImage, { thumbnail = false } = {}) {
+  const readImage = useRpc(thumbnail ? readThumbnailRpc : readImageRpc);
   const query = useQuery({
-    queryKey: ["gallery-image", image.src],
+    queryKey: [thumbnail ? "gallery-thumbnail" : "gallery-image", image.src],
     queryFn: () => readImage({ path: image.src }),
     enabled: image.kind === "file",
     staleTime: Number.POSITIVE_INFINITY,

@@ -20,7 +20,7 @@ function Thumbnail({
   theme: Theme;
   onPress: () => void;
 }) {
-  const { uri, error, loading } = useImageUri(image);
+  const { uri, error, loading } = useImageUri(image, { thumbnail: true });
   return (
     <Pressable
       accessibilityRole="button"
