@@ -209,7 +209,7 @@ export async function readImage({ path }: RpcInput<typeof readImageRpc>) {
   return { mimeType, base64: bytes.toString("base64") };
 }
 
-const THUMBNAIL_SIZE = 320;
+const THUMBNAIL_SIZE = 640;
 const THUMBNAIL_DIR = join(tmpdir(), "paseo-image-gallery-thumbnails");
 const run = promisify(execFile);
 /** Formats macOS `sips` converts reliably. SVG and others are served at full size. */
