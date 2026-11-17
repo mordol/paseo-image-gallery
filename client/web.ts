@@ -5,6 +5,7 @@ interface KeyEvent {
   key: string;
   preventDefault(): void;
 }
+declare const navigator: { userAgent: string };
 declare const window: {
   addEventListener(type: "keydown", listener: (event: KeyEvent) => void): void;
   removeEventListener(type: "keydown", listener: (event: KeyEvent) => void): void;
@@ -21,4 +22,14 @@ export function onKeyDown(handler: (key: string) => boolean): () => void {
   };
   window.addEventListener("keydown", listener);
   return () => window.removeEventListener("keydown", listener);
+}
+
+/**
+ * True in the macOS desktop app, where the window buttons overlay the top-left corner of a
+ * full-window modal. Browsers and native platforms keep their own window chrome.
+ */
+export function hasWindowButtons(): boolean {
+  if (Platform.OS !== "web") return false;
+  const agent = navigator.userAgent;
+  return agent.includes("Electron") && agent.includes("Macintosh");
 }

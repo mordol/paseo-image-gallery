@@ -1,6 +1,6 @@
 import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import type { GalleryImage } from "../shared/gallery";
 import { fileName, useImageUri } from "./image";
-import { onKeyDown } from "./web";
+import { hasWindowButtons, onKeyDown } from "./web";
 
 type Theme = PluginWorkspacePanelProps["theme"];
 type Layout = PluginWorkspacePanelProps["layout"];
@@ -20,6 +20,21 @@ type Zone = "top" | "bottom" | "left" | "right";
 
 const EDGE = 96;
 const BAR = 72;
+const HIDE_DELAY_MS = 250;
+/** Room for the macOS window buttons, which sit over the top-left corner of a full-window modal. */
+const WINDOW_BUTTONS_INSET = 80;
+
+/**
+ * Hover tracking for one zone. The zone and every button inside it report hover separately,
+ * because moving onto a child button can end the zone's own hover.
+ */
+const HoverContext = createContext<{ enter: (id: string) => void; leave: (id: string) => void } | null>(null);
+
+/** Pressable hover props that keep the surrounding zone revealed. */
+function useZoneHover(id: string) {
+  const hover = useContext(HoverContext);
+  return hover ? { onHoverIn: () => hover.enter(id), onHoverOut: () => hover.leave(id) } : {};
+}
 
 function clamp(value: number, limit: number) {
   return Math.max(-limit, Math.min(limit, value));
@@ -40,8 +55,10 @@ function ToolButton({
   disabled?: boolean;
   onPress: () => void;
 }) {
+  const hover = useZoneHover(`button:${label}`);
   return (
     <Pressable
+      {...hover}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
@@ -64,6 +81,43 @@ function ToolButton({
   );
 }
 
+function NavButton({
+  side,
+  enabled,
+  theme,
+  onPress,
+}: {
+  side: "left" | "right";
+  enabled: boolean;
+  theme: Theme;
+  onPress: () => void;
+}) {
+  const hover = useZoneHover("nav");
+  return (
+    <Pressable
+      {...hover}
+      accessibilityRole="button"
+      accessibilityLabel={side === "left" ? "Previous image" : "Next image"}
+      accessibilityState={{ disabled: !enabled }}
+      disabled={!enabled}
+      onPress={onPress}
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: theme.colors.surface2,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        opacity: enabled ? 1 : 0.3,
+      }}
+    >
+      <Icon name={side === "left" ? "ChevronLeft" : "ChevronRight"} size={22} color={theme.colors.foreground} />
+    </Pressable>
+  );
+}
+
 /** A region that reveals its controls while hovered (web) or while controls are pinned by a tap. */
 function HoverZone({
   zone,
@@ -77,9 +131,16 @@ function HoverZone({
   style: object;
   visible: boolean;
   hoverable: boolean;
-  onHover: (zone: Zone | null) => void;
+  onHover: (id: string, zone: Zone, hovered: boolean) => void;
   children: ReactNode;
 }) {
+  const context = useMemo(
+    () => ({
+      enter: (id: string) => onHover(`${zone}:${id}`, zone, true),
+      leave: (id: string) => onHover(`${zone}:${id}`, zone, false),
+    }),
+    [onHover, zone],
+  );
   const content = (
     <View style={{ flex: 1, opacity: visible ? 1 : 0 }} pointerEvents={visible ? "box-none" : "none"}>
       {children}
@@ -95,11 +156,11 @@ function HoverZone({
   return (
     <Pressable
       accessible={false}
-      onHoverIn={() => onHover(zone)}
-      onHoverOut={() => onHover(null)}
+      onHoverIn={() => context.enter("zone")}
+      onHoverOut={() => context.leave("zone")}
       style={[{ position: "absolute" }, style]}
     >
-      {content}
+      <HoverContext.Provider value={context}>{content}</HoverContext.Provider>
     </Pressable>
   );
 }
@@ -124,6 +185,24 @@ export function Viewer({
   const hoverable = layout.platform === "web";
 
   const [hovered, setHovered] = useState<Zone | null>(null);
+  // Every hovered zone or button, keyed by id. Controls hide only after all of them are left.
+  const hoverSources = useRef(new Map<string, Zone>());
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onHover = useCallback((id: string, zone: Zone, isHovered: boolean) => {
+    if (isHovered) hoverSources.current.set(id, zone);
+    else hoverSources.current.delete(id);
+    if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+    hideTimer.current = null;
+    const active = [...hoverSources.current.values()].at(-1);
+    if (active) setHovered(active);
+    else hideTimer.current = setTimeout(() => setHovered(null), HIDE_DELAY_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+    },
+    [],
+  );
   const [pinned, setPinned] = useState(!hoverable);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
@@ -221,36 +300,6 @@ export function Viewer({
     borderColor: theme.colors.border,
   };
   const muted = { color: theme.colors.foregroundMuted, fontSize: 12 };
-  const navButton = (side: "left" | "right") => {
-    const enabled = side === "left" ? hasPrevious : hasNext;
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={side === "left" ? "Previous image" : "Next image"}
-        accessibilityState={{ disabled: !enabled }}
-        disabled={!enabled}
-        onPress={() => go(side === "left" ? index - 1 : index + 1)}
-        style={{
-          width: 44,
-          height: 44,
-          borderRadius: 22,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: theme.colors.surface2,
-          borderWidth: 1,
-          borderColor: theme.colors.border,
-          opacity: enabled ? 1 : 0.3,
-        }}
-      >
-        <Icon
-          name={side === "left" ? "ChevronLeft" : "ChevronRight"}
-          size={22}
-          color={theme.colors.foreground}
-        />
-      </Pressable>
-    );
-  };
-
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View
@@ -290,9 +339,9 @@ export function Viewer({
           style={{ top: 0, left: 0, right: 0, height: BAR }}
           visible={show("top")}
           hoverable={hoverable}
-          onHover={setHovered}
+          onHover={onHover}
         >
-          <View style={[bar, { borderBottomWidth: 1 }]}>
+          <View style={[bar, { borderBottomWidth: 1 }, hasWindowButtons() ? { paddingLeft: WINDOW_BUTTONS_INSET } : null]}>
             <Text numberOfLines={1} style={{ flex: 1, color: theme.colors.foreground, fontSize: 14 }}>
               {fileName(image.src)}
             </Text>
@@ -335,7 +384,7 @@ export function Viewer({
           style={{ bottom: 0, left: 0, right: 0, height: BAR }}
           visible={show("bottom")}
           hoverable={hoverable}
-          onHover={setHovered}
+          onHover={onHover}
         >
           <View style={[bar, { flex: 1, borderTopWidth: 1, flexDirection: "column", alignItems: "flex-start", gap: 2 }]}>
             <Text selectable numberOfLines={1} style={muted}>
@@ -354,10 +403,15 @@ export function Viewer({
             style={{ [side]: 0, top: "30%", height: "40%", width: EDGE }}
             visible={show(side)}
             hoverable={hoverable}
-            onHover={setHovered}
+            onHover={onHover}
           >
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }} pointerEvents="box-none">
-              {navButton(side)}
+              <NavButton
+                side={side}
+                enabled={side === "left" ? hasPrevious : hasNext}
+                theme={theme}
+                onPress={() => go(side === "left" ? index - 1 : index + 1)}
+              />
             </View>
           </HoverZone>
         ))}
