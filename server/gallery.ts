@@ -209,36 +209,58 @@ export async function readImage({ path }: RpcInput<typeof readImageRpc>) {
   return { mimeType, base64: bytes.toString("base64") };
 }
 
-const THUMBNAIL_SIZE = 640;
+/** Grid tiles crop images to squares, so the short side decides how sharp a thumbnail looks. */
+const THUMBNAIL_SHORT_SIDE = 640;
+/** Keeps very wide or tall images from producing large thumbnails. */
+const THUMBNAIL_MAX_LONG_SIDE = 1600;
 const THUMBNAIL_DIR = join(tmpdir(), "paseo-image-gallery-thumbnails");
 const run = promisify(execFile);
 /** Formats macOS `sips` converts reliably. SVG and others are served at full size. */
 const RESIZABLE = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 
+async function imageSize(path: string) {
+  const { stdout } = await run("sips", ["-g", "pixelWidth", "-g", "pixelHeight", path]);
+  const width = Number(stdout.match(/pixelWidth:\s*(\d+)/)?.[1]);
+  const height = Number(stdout.match(/pixelHeight:\s*(\d+)/)?.[1]);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
 /**
- * A copy at most THUMBNAIL_SIZE pixels on its longest side, made with the `sips` tool built
- * into macOS and cached in the temp directory by content hash. Other platforms, formats `sips`
- * cannot convert, and images already small enough get the original file.
+ * A copy whose short side is THUMBNAIL_SHORT_SIDE pixels (long side at most
+ * THUMBNAIL_MAX_LONG_SIDE), made with the `sips` tool built into macOS and cached in the temp
+ * directory by content hash. Other platforms, formats `sips` cannot convert, and images that
+ * would not shrink get the original file.
  */
 export async function readThumbnail({ path }: RpcInput<typeof readThumbnailRpc>) {
   const mimeType = checkAllowed(path);
+  const original = async () => ({ mimeType, base64: (await readFile(path)).toString("base64") });
+  if (process.platform !== "darwin" || !RESIZABLE.has(extname(path).toLowerCase())) return original();
   const hash = await fileHash(path);
-  const info = await stat(path);
-  const small = info.size <= 64 * 1024;
-  if (process.platform === "darwin" && hash && !small && RESIZABLE.has(extname(path).toLowerCase())) {
-    const out = join(THUMBNAIL_DIR, `${hash}-${THUMBNAIL_SIZE}.png`);
-    try {
-      return { mimeType: "image/png", base64: (await readFile(out)).toString("base64") };
-    } catch {
-      // Not cached yet.
-    }
-    try {
-      await mkdir(THUMBNAIL_DIR, { recursive: true });
-      await run("sips", ["-Z", String(THUMBNAIL_SIZE), "-s", "format", "png", path, "--out", out]);
-      return { mimeType: "image/png", base64: (await readFile(out)).toString("base64") };
-    } catch (error) {
-      console.error(`Thumbnail failed for ${path}:`, error);
-    }
+  if (!hash) return original();
+  const key = `${hash}-s${THUMBNAIL_SHORT_SIDE}-l${THUMBNAIL_MAX_LONG_SIDE}`;
+  const out = join(THUMBNAIL_DIR, `${key}.png`);
+  try {
+    const cached = await readFile(out);
+    if (cached.length >= (await stat(path)).size) return original();
+    return { mimeType: "image/png", base64: cached.toString("base64") };
+  } catch {
+    // Not cached yet.
   }
-  return { mimeType, base64: (await readFile(path)).toString("base64") };
+  try {
+    const size = await imageSize(path);
+    if (!size) return original();
+    const long = Math.max(size.width, size.height);
+    const short = Math.min(size.width, size.height);
+    const target = Math.min(Math.round((long * THUMBNAIL_SHORT_SIDE) / short), THUMBNAIL_MAX_LONG_SIDE);
+    if (target >= long) return original();
+    await mkdir(THUMBNAIL_DIR, { recursive: true });
+    await run("sips", ["-Z", String(target), "-s", "format", "png", path, "--out", out]);
+    const bytes = await readFile(out);
+    // Re-encoding can grow already compact images; then the original is the better thumbnail.
+    if (bytes.length >= (await stat(path)).size) return original();
+    return { mimeType: "image/png", base64: bytes.toString("base64") };
+  } catch (error) {
+    console.error(`Thumbnail failed for ${path}:`, error);
+    return original();
+  }
 }
