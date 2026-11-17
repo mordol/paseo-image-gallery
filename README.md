@@ -2,6 +2,10 @@
 
 A [Paseo](https://paseo.sh) plugin that collects every image from a workspace's agent sessions into a gallery in the right-side Explorer panel.
 
+![Gallery in the Explorer panel](assets/screenshot-grid.png)
+
+![Full-screen viewer](assets/screenshot-viewer.png)
+
 ## Features
 
 - Open **Image gallery** from the Explorer **+** menu, from the Command Center ("Open workspace image gallery"), or with `/gallery` in the composer.

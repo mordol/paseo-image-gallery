@@ -3,7 +3,11 @@
   "name": "Image gallery",
   "description": "Browse every image from a workspace's agent sessions in a side panel gallery",
   "icon": "assets/icon.png",
-  "media": [],
+  "media": [
+    "assets/screenshot-grid.png",
+    "assets/screenshot-viewer.png",
+    "assets/screenshot-zoom.png"
+  ],
   "requirements": {
     "paseo": ">=0.16.0"
   }
